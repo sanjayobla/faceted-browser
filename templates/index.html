@@ -1,0 +1,82 @@
+{% extends "layout.html" %}
+{% block content %}
+<script type=text/javascript>
+  $(function() {
+	$("#loadBtn").click(function() {
+		$.ajax({
+			type: "GET",
+			url: $SCRIPT_ROOT + "/populateFilters/",
+			contentType: "application/json; charset=utf-8",
+			success: function(data) {
+				var obj = jQuery.parseJSON(data);
+				//console.log(obj);
+				var html = '<form role="form">';
+				for (key in obj.filters) {
+					html += '<div class="form-group col-md-1">';
+					html += '<label for="'+key+'">'+key+'</label>';
+					html += '<select class="form-control filter" id="'+key+'">';
+					html += '<option id="all"></option>';
+					for (value in obj.filters[key]) {
+						html += '<option id="'+obj.filters[key][value]+'">'+obj.filters[key][value]+'</option>';
+					}
+					html += '</select></div>'
+				}
+				html += '<div class="form-group col-md-1">';
+				html += '<label for="category">Category</label>';
+				html += '<select class="form-control category" id="category">';
+				for (value in obj.categories) {
+					html += '<option id="'+obj.categories[value]+'">'+obj.categories[value]+'</option>';
+				}
+				html += '</select></div>'
+				html += "<button type='button' id='filterBtn' name='filterBtn'>Filter</button>"
+				html += "</form>";
+				$('#dropdown').html(html);
+				$("#filterBtn").click(function() {
+					var filters = {};
+					var data = {};
+					$(".filter").each(function () {
+						filterKey = $(this).attr('id');
+						filterValue = $(this).val();
+						if (filterValue != '') {
+							filters[filterKey] = $(this).val();
+						}
+					});
+					
+					filters['category'] = $('#category').val();
+					console.log(data);
+					$.ajax({
+						type: "GET",
+						url: $SCRIPT_ROOT + "/filter/",
+						contentType: "application/json; charset=utf-8",
+						data: filters,
+						success: function(json) {
+							data = jQuery.parseJSON(json);
+							console.log(data.length);
+							console.log(data);
+							$('#vis').vis({'data': data});
+						}
+					});
+				});
+			}
+		});
+	});
+	function loadGraph(data) {
+	}
+
+    $("#submitBtn").click(function() {
+         $.ajax({
+            type: "GET",
+            url: $SCRIPT_ROOT + "/echo/",
+            contentType: "application/json; charset=utf-8",
+            data: { echoValue: $('input[name="echoText"]').val() },
+            success: function(data) {
+                $('#echoResult').text(data.value);
+            }
+        });    
+    });
+  });
+</script>
+<button type='button' id='loadBtn' name='loadBtn'>Load fields</button><br /><br />
+<div id='dropdown'></div>
+<div id='vis'></div>
+{% endblock %}

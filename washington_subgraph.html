@@ -1,0 +1,2364 @@
+
+<!DOCTYPE html>
+<html lang='en'>
+<head>
+	<meta charset='utf-8'>
+	<title>Crossfilter Experiment</title>
+	<script src='js/d3.js' type='text/javascript'></script>
+	<script src='js/crossfilter.js' type='text/javascript'></script>
+	<script src='js/dc.js' type='text/javascript'></script>
+
+
+	<script src="http://code.jquery.com/jquery-1.10.1.min.js"></script>
+	<script src="//ajax.googleapis.com/ajax/libs/jqueryui/1.10.3/jquery-ui.min.js"></script>
+	<script src="http://labratrevenge.com/d3-tip/javascripts/d3.tip.v0.6.3.js"></script>
+
+	<link href="css/jquery.tagit.css" rel="stylesheet" type="text/css">
+
+	<link href="css/tagit.ui-zendesk.css" rel="stylesheet" type="text/css">
+	<link rel="stylesheet" href="http://yui.yahooapis.com/pure/0.3.0/pure-min.css">
+	<script src="js/tag-it.js" type="text/javascript" charset="utf-8"></script>
+
+	<!-- <link href='css/dc.css' rel='stylesheet' type='text/css'> -->
+
+	<style type="text/css">
+
+	.xaxis,.yaxis path,
+	.xaxis,.yaxis line {
+	  fill: none;
+	  stroke: #000;
+	  shape-rendering: crispEdges;
+	}
+
+	.area {
+	  fill: steelblue;
+	}
+	.d3-tip {
+		line-height: 1;
+		font-weight: bold;
+		padding: 12px;
+		background: rgba(0, 0, 0, 0.8);
+		color: #fff;
+		border-radius: 1px;
+	}
+
+	/* Creates a small triangle extender for the tooltip */
+	.d3-tip:after {
+		box-sizing: border-box;
+		display: inline;
+		font-size: 10px;
+		width: 100%;
+		line-height: 1;
+		color: rgba(0, 0, 0, 0.8);
+		content: "\25BC";
+		position: absolute;
+		text-align: center;
+	}
+
+	/* Style northward tooltips differently */
+	.d3-tip.n:after {
+		margin: -1px 0 0 0;
+		top: 100%;
+		left: 0;
+	}
+	</style>
+	<script type="text/javascript">
+
+	function populateFilters() {
+		var availableTags = [];
+		$.getJSON("allwines.json", function(data) {
+			var ndx = crossfilter(data);
+			var category = ['Producer', 'ColorClass', 'Region', 'Variety', 'maturityShow','Vintage','Source','Locale'];
+			for (i=0;i<category.length;i++) {
+				//console.log(category[i]);
+				var dim = ndx.dimension(function(d) {return d[category[i]];});
+				var grouped = dim.group();
+				$.each(grouped.top(Infinity), function(index, value) {
+					availableTags.push(category[i]+': '+value.key);
+					$('#'+category[i]).append($('<option>').text(value.key).attr('value', value.key));
+				});
+				//console.log('out of populate');
+				$('#'+category[i]).html($('#'+category[i]+' option').sort(function(x, y) {
+					return $(x).text() < $(y).text() ? -1 : 1;
+				}))
+				$('#'+category[i]).get(0).selectedIndex = 0;
+				//console.log(JSON.stringify(grouped.top(Infinity)));
+			}
+		});
+		$("#myTags").tagit({
+			availableTags: availableTags,
+			tagLimit: 15,
+			afterTagAdded: loadData,
+			afterTagRemoved: function (event, ui) {
+				console.log('tag changed');
+				var category = ui.tagLabel.split(': ');
+					//console.log(category[0]);
+					$('#'+category[0]).val('');
+					loadData();
+					updateFilters({id: category[0]});
+				}
+			});
+	}
+	function updateFilters(content) {
+		var availableTags = [];
+		$.getJSON("allwines.json", function(data) {
+			var ndx = crossfilter(data);
+			var category = ['Producer', 'ColorClass', 'Region', 'Variety', 'maturityShow','Vintage','Source','Locale'];
+			var index = find(content.id,category);
+			category.splice(index,1);
+			var dim = []
+			dim['selection'] = ndx.dimension(function(d) {return d[content.id];});
+			if(content.value) {
+				dim['selection'].filter(content.value);
+			}
+			for(i=0;i<category.length;i++) {
+				dim[i] = ndx.dimension(function(d) {return d[category[i]];});
+				var value = $('#'+category[i]).val();
+				if (value) {
+					dim[i].filter(value);
+				}
+			}
+			for (i=0;i<category.length;i++) {
+				//console.log(category[i]);
+				var grouped = dim[i].group();
+				var value = $('#'+category[i]).val();
+				$('#'+category[i]).html('<option></option>');
+
+				$.each(grouped.top(Infinity), function(index, value) {
+					//console.log(value);
+					if (value.value > 0) {
+						availableTags.push(category[i]+': '+value.key);
+						$('#'+category[i]).append($('<option>').text(value.key).attr('value', value.key));
+					}
+				});
+				//console.log('out of populate');
+				$('#'+category[i]).html($('#'+category[i]+' option').sort(function(x, y) {
+					return $(x).text() < $(y).text() ? -1 : 1;
+				}))
+				$('#'+category[i]).get(0).selectedIndex = 0;
+				$('#'+category[i]).val(value);
+				//console.log(JSON.stringify(grouped.top(Infinity)));
+			}
+		});
+$("#myTags").tagit({
+	availableTags: availableTags,
+});
+}
+var processed;
+var subprocessed;
+var sortable = [];
+var desc_index = 0;
+function loadData() {
+	console.log('Load data called');
+	sortable = [];
+	processed = [];
+	desc_string = "<tspan>";
+	var category = $('#Category').val();
+		//console.log(category);
+		//console.log($("#myTags").tagit('tags'));
+		//console.log(filters);
+		var label;
+		var categoryFilter = '';
+
+		$.getJSON("allwines.json", function(data) {
+			var dim = {};
+			var ndx = crossfilter(data);
+			dim[category] = ndx.dimension(function(d) {return d[category]; });
+
+			var filter = {};
+			var filters = $("#myTags").tagit('assignedTags');
+
+			console.log(filters);
+			var filterByCategory = {};
+			for (var index in filters) {
+				label = filters[index];
+				var split = label.split(": ");
+				console.log(split[0]+' and '+split[1]);
+				if (split[0] != category) {
+					console.log('category created');
+					if (typeof filterByCategory[split[0]] != 'undefined') {
+						filterByCategory[split[0]] += split[1]+';';	
+					}
+					else {
+						dim[split[0]] = ndx.dimension(function(d) {return d[split[0]]; });
+						filterByCategory[split[0]] = split[1]+';';	
+					}
+					dim[split[0]].filter(split[1]);
+				} else {
+					categoryFilter += split[1]+';';
+				}
+				//filters.shift();
+			}
+
+			console.log("filter by category is");
+			console.log(filterByCategory);
+			for (var index in filterByCategory) {
+				var catFilters = filterByCategory[index].split(';');
+				dim[index].filter(function(d) {
+					var flag = 0;
+					for (var index in catFilters) {
+						if (d == catFilters[index]) {
+							flag = 1;
+						}
+					}
+					if (flag == 1) { console.log("returning true for "+d); }
+					return flag;
+				})
+
+			}
+
+			console.log(dim[category].top(Infinity));
+			filters.length=0;
+
+			function reduceAddAvg(attr) {
+				return function(p,v) {
+					++p.count
+					p.sum += isNaN(v[attr]) ? 0 : parseInt(v[attr]);
+					p.avg = p.sum/p.count;
+					p.name += v['LabelName']+';;';
+					p.review += v['docText']+';;';
+					p.rating += parseInt(v[attr])+';;';
+					p.producer += v['Producer']+';;';
+					p.color += v['ColorClass']+';;';
+					for (var desc in v['Descriptor'])
+						p.descCount[v['Descriptor'][desc]] = isNaN(p.descCount[v['Descriptor'][desc]]) ? 1 : p.descCount[v['Descriptor'][desc]]+1;
+					return p;
+				};
+			}
+			function reduceRemoveAvg(attr) {
+				return function(p,v) {
+					--p.count
+					p.sum -= isNaN(v[attr]) ? 0 : parseInt(v['attr']);
+					p.avg = p.sum/p.count;
+					p.descCount[v['Descriptor'][desc]] = isNaN(p.descCount[v['Descriptor'][desc]]) ? 1 : p.descCount[v['Descriptor'][desc]]-1;
+					return p;
+				};
+			}
+			function reduceInitAvg() {
+				return {count:0, sum:0, avg:0, review:'', descCount:[], name:'', rating: '', producer: '', color: ''};
+			}
+			function orderValue(p) {
+				return p.count;
+			}
+
+		/*
+		 v is the row in the dataset
+
+		 p is {} for the first execution (passed from reduceInitial). 
+		 For every subsequent execution it is the value returned from reduceAdd of the prev row
+		 */
+		 function reduceAdd(p, v) {
+		 	if (v.hasOwnProperty("Descriptor")) {
+		 		v.Descriptor.forEach (function(val, idx) {
+		     p[val] = (p[val] || 0) + 1; //increment counts
+		 });
+		 	}
+		 	return p;
+		 }
+
+		 function reduceRemove(p, v) {
+		   //omitted. not useful for demonstration
+		}
+
+		function reduceInitial() {
+		  /* this is how our reduce function is seeded. similar to how inject or fold 
+		   works in functional languages. this map will contain the final counts 
+		   by the time we are done reducing our entire data set.*/
+		   return {};  
+		}
+
+		var ratingsAvgGroup;
+		ratingsAvgGroup = dim[category].group().reduce(reduceAddAvg('Rating'), reduceRemoveAvg('Rating'), reduceInitAvg).order(orderValue);
+		dim['ColorClassPerCategory'] = ndx.dimension(function(d) {return "Color="+d.ColorClass+" ;"+category+"="+d[category]; });
+		var colorGroup = dim['ColorClassPerCategory'].group().reduceCount(function (d) { return d.ColorClass; }).order(orderValue).top(Infinity);
+		//console.log(colorGroup);
+		// dim['descriptor'] = ndx.dimension(function(d) {return d.Descriptor; });
+		// var descs = dim['descriptor'].groupAll().reduce(reduceAdd, reduceRemove, reduceInitial).value();
+		// //console.log(descs);
+		var processedAll = ratingsAvgGroup.all();
+		if(processedAll.length > 0) {
+			//console.log(processedAll); 
+			//console.log(JSON.stringify(processedAll));
+			var processedAllDim = crossfilter(processedAll);
+			var processedDim = processedAllDim.dimension(function(d) { return d.value.count; });
+			if (categoryFilter != '') {
+				var catDimension = processedAllDim.dimension(function(d) { return d.key; });
+				catDimension.filter(function(d) {
+					var catFilters = categoryFilter.split(';');
+					var flag = 0;
+					for (var index in catFilters) {
+						if (d == catFilters[index]) {
+							flag = 1;
+						}
+					}
+					return flag;
+				});
+			}
+			processed = processedDim.filter(function (d) { return d > 0; }).top(Infinity);
+			//console.log(processed);
+		}
+		else {
+			processed = [];
+		}
+		desc_index = 0;
+		var sum = 0;
+		for (var i in processed) {
+			sum += parseInt(processed[i].value.count);
+		}
+		if ($('#total').val() == '') {
+			$('#total').val(sum);
+			$('#current').val(sum);
+			$('#currentShow').fadeOut('fast', function() {
+				$('#currentShow').html(sum);
+				$('#totalShow').html('/ '+sum);			
+			});
+			$('#currentShow').fadeIn('fast', function() {
+			});
+		}
+		else {
+			$('#current').val(sum);
+			var total = $('#total').val();
+			$('#currentShow').fadeOut('fast', function() {
+				$('#currentShow').html(sum);
+			});
+			$('#currentShow').fadeIn('fast', function() {
+			});
+		}
+	//alert($('#total').val());
+	visualize();
+})
+.error(function() {
+	//	console.log(arguments);
+});
+}
+
+var catVal = '';
+function subProcess() {
+	console.log('Load data called');
+	sortable = [];
+	processed = [];
+	desc_string = "<tspan>";
+	var category = $('#Category').val();
+
+		//console.log(category);
+		//console.log($("#myTags").tagit('tags'));
+		//console.log(filters);
+		var label;
+		var categoryFilter = '';
+		$.ajaxSetup({
+			async: false
+		});
+		$.getJSON("data1.json", function(data) {
+			var dim = {};
+			var ndx = crossfilter(data);
+			dim[category] = ndx.dimension(function(d) {return d[category]; });
+
+			var filter = {};
+			var filters = $("#myTags").tagit('assignedTags');
+
+			console.log(filters.length);
+			
+			var filterByCategory = {};
+			for (var index in filters) {
+				label = filters[index];
+				var split = label.split(": ");
+				console.log(split[0]+' and '+split[1]);
+				if (split[0] != category) {
+					console.log('category created');
+					if (typeof filterByCategory[split[0]] != 'undefined') {
+						filterByCategory[split[0]] += split[1]+';';	
+					}
+					else {
+						dim[split[0]] = ndx.dimension(function(d) {return d[split[0]]; });
+						filterByCategory[split[0]] = split[1]+';';	
+					}
+					dim[split[0]].filter(split[1]);
+				} else {
+					categoryFilter += split[1]+';';
+				}
+				//filters.shift();
+			}
+
+			for (var index in filterByCategory) {
+				var catFilters = filterByCategory[index].split(';');
+				dim[index].filter(function(d) {
+					var flag = 0;
+					for (var index in catFilters) {
+						if (d == catFilters[index]) {
+							flag = 1;
+						}
+					}
+					return flag;
+				})
+
+			}
+
+			filters.length=0;
+
+			function reduceAddAvg(attr) {
+				return function(p,v) {
+					++p.count
+					p.sum += isNaN(v[attr]) ? 0 : parseInt(v[attr]);
+					p.avg = p.sum/p.count;
+					p.name += v['LabelName']+';;';
+					p.review += v['docText']+';;';
+					p.rating += parseInt(v[attr])+';;';
+					p.producer += v['Producer']+';;';
+					p.color += v['ColorClass']+';;';
+					for (var desc in v['Descriptor'])
+						p.descCount[v['Descriptor'][desc]] = isNaN(p.descCount[v['Descriptor'][desc]]) ? 1 : p.descCount[v['Descriptor'][desc]]+1;
+					return p;
+				};
+			}
+			function reduceRemoveAvg(attr) {
+				return function(p,v) {
+					--p.count
+					p.sum -= isNaN(v[attr]) ? 0 : parseInt(v['attr']);
+					p.avg = p.sum/p.count;
+					p.descCount[v['Descriptor'][desc]] = isNaN(p.descCount[v['Descriptor'][desc]]) ? 1 : p.descCount[v['Descriptor'][desc]]-1;
+					return p;
+				};
+			}
+			function reduceInitAvg() {
+				return {count:0, sum:0, avg:0, review:'', descCount:[], name:'', rating: '', producer: '', color: ''};
+			}
+			function orderValue(p) {
+				return p.count;
+			}
+
+		/*
+		 v is the row in the dataset
+
+		 p is {} for the first execution (passed from reduceInitial). 
+		 For every subsequent execution it is the value returned from reduceAdd of the prev row
+		 */
+		 function reduceAdd(p, v) {
+		 	if (v.hasOwnProperty("Descriptor")) {
+		 		v.Descriptor.forEach (function(val, idx) {
+		     p[val] = (p[val] || 0) + 1; //increment counts
+		 });
+		 	}
+		 	return p;
+		 }
+
+		 function reduceRemove(p, v) {
+		   //omitted. not useful for demonstration
+		}
+
+		function reduceInitial() {
+		  /* this is how our reduce function is seeded. similar to how inject or fold 
+		   works in functional languages. this map will contain the final counts 
+		   by the time we are done reducing our entire data set.*/
+		   return {};  
+		}
+
+		var ratingsAvgGroup;
+		ratingsAvgGroup = dim[category].group().reduce(reduceAddAvg('Rating'), reduceRemoveAvg('Rating'), reduceInitAvg).order(orderValue);
+		dim['ColorClassPerCategory'] = ndx.dimension(function(d) {return "Color="+d.ColorClass+" ;"+category+"="+d[category]; });
+		var colorGroup = dim['ColorClassPerCategory'].group().reduceCount(function (d) { return d.ColorClass; }).order(orderValue).top(Infinity);
+		//console.log(colorGroup);
+		// dim['descriptor'] = ndx.dimension(function(d) {return d.Descriptor; });
+		// var descs = dim['descriptor'].groupAll().reduce(reduceAdd, reduceRemove, reduceInitial).value();
+		// //console.log(descs);
+		var processedAll = ratingsAvgGroup.all();
+		if(processedAll.length > 0) {
+			//console.log(processedAll); 
+			//console.log(JSON.stringify(processedAll));
+			var processedAllDim = crossfilter(processedAll);
+			var processedDim = processedAllDim.dimension(function(d) { return d.value.count; });
+			if (categoryFilter != '') {
+				var catDimension = processedAllDim.dimension(function(d) { return d.key; });
+				catDimension.filter(function(d) {
+					var catFilters = categoryFilter.split(';');
+					var flag = 0;
+					for (var index in catFilters) {
+						if (d == catFilters[index]) {
+							flag = 1;
+						}
+					}
+					return flag;
+				});
+			}
+			processed = processedDim.filter(function (d) { return d > 0; }).top(Infinity);
+			//console.log(processed);
+		}
+		else {
+			processed = [];
+		}
+		desc_index = 0;
+		var sum = 0;
+		for (var i in processed) {
+			sum += parseInt(processed[i].value.count);
+		}
+		if ($('#total').val() == '') {
+			$('#total').val(sum);
+			$('#current').val(sum);
+			$('#currentShow').fadeOut('fast', function() {
+				$('#currentShow').html(sum);
+				$('#totalShow').html('/ '+sum);			
+			});
+			$('#currentShow').fadeIn('fast', function() {
+			});
+		}
+		else {
+			$('#current').val(sum);
+			var total = $('#total').val();
+			$('#currentShow').fadeOut('fast', function() {
+				$('#currentShow').html(sum);
+			});
+			$('#currentShow').fadeIn('fast', function() {
+			});
+		}
+	//alert($('#total').val());
+	subVisualize();
+})
+.error(function() {
+	//	console.log(arguments);
+});
+}
+
+var subprocessed;
+var catVal;
+function subDraw(categoryVal) {
+	catVal = categoryVal;
+		//console.log('category is '+catVal);
+
+		console.log('subprocess data called');
+		sortable = [];
+		subprocessed = [];
+		desc_string = "<tspan>";
+		var category = $('#Category').val();
+		var subcategory = $('#subCategory').val();
+		//console.log(category);
+		//console.log($('#myTags').html());
+		var subfilters = [];
+		$("div.tagit-label").each(function(index) {
+			subfilters.push($(this).html());
+		});
+		//console.log(subfilters);
+		var subFilter = '';
+		subFilter = category+': '+catVal;
+		subfilters.push(subFilter);
+		var label = '';
+		var categoryFilter = '';
+		//console.log(subfilters);
+
+		$.getJSON("allwines.json", function(data) {
+			var dim = {};
+			var ndx = crossfilter(data);
+			dim[subcategory] = ndx.dimension(function(d) {return d[subcategory]; });
+
+			var filter = {};
+			console.log(subfilters);
+
+			var filterByCategory = {};
+
+			for (var index in subfilters) {
+				label = subfilters[index];
+				var split = label.split(": ");
+				console.log(split[0]+' and '+split[1]);
+				if (split[0] != subcategory) {
+					console.log('category created');
+					dim[split[0]] = ndx.dimension(function(d) {return d[split[0]]; });
+					if (typeof filterByCategory[split[0]] != 'undefined') {
+						filterByCategory[split[0]] += split[1]+';';	
+					}
+					else {
+						console.log('creating dimension and filter by '+split[0]);
+						dim[split[0]] = ndx.dimension(function(d) {return d[split[0]]; });
+						filterByCategory[split[0]] = split[1]+';';	
+					}
+					dim[split[0]].filter(split[1]);
+				} else {
+					categoryFilter += split[1]+';';
+				}
+				//filters.shift();
+			}
+			for (var index in filterByCategory) {
+				var catFilters = filterByCategory[index].split(';');
+				dim[index].filter(function(d) {
+					var flag = 0;
+					for (var index in catFilters) {
+						if (d == catFilters[index]) {
+							flag = 1;
+						}
+					}
+					return flag;
+				})
+
+			}
+			console.log(dim[subcategory].top(Infinity));
+			console.log("category filter: "+categoryFilter);
+
+			function reduceAddAvg(attr) {
+				return function(p,v) {
+					++p.count
+					p.sum += isNaN(v[attr]) ? 0 : parseInt(v[attr]);
+					p.avg = p.sum/p.count;
+					p.name += v['LabelName']+';;';
+					p.review += v['docText']+';;';
+					p.rating += parseInt(v[attr])+';;';
+					p.producer += v['Producer']+';;';
+					p.color += v['ColorClass']+';;';
+					for (var desc in v['Descriptor'])
+						p.descCount[v['Descriptor'][desc]] = isNaN(p.descCount[v['Descriptor'][desc]]) ? 1 : p.descCount[v['Descriptor'][desc]]+1;
+					return p;
+				};
+			}
+			function reduceRemoveAvg(attr) {
+				return function(p,v) {
+					--p.count
+					p.sum -= isNaN(v[attr]) ? 0 : parseInt(v['attr']);
+					p.avg = p.sum/p.count;
+					p.descCount[v['Descriptor'][desc]] = isNaN(p.descCount[v['Descriptor'][desc]]) ? 1 : p.descCount[v['Descriptor'][desc]]-1;
+					return p;
+				};
+			}
+			function reduceInitAvg() {
+				return {count:0, sum:0, avg:0, review:'', descCount:[], name:'', rating: '', producer: '', color: ''};
+			}
+			function orderValue(p) {
+				return p.count;
+			}
+
+		/*
+		 v is the row in the dataset
+
+		 p is {} for the first execution (passed from reduceInitial). 
+		 For every subsequent execution it is the value returned from reduceAdd of the prev row
+		 */
+		 function reduceAdd(p, v) {
+		 	if (v.hasOwnProperty("Descriptor")) {
+		 		v.Descriptor.forEach (function(val, idx) {
+		     p[val] = (p[val] || 0) + 1; //increment counts
+		 });
+		 	}
+		 	return p;
+		 }
+
+		 function reduceRemove(p, v) {
+		   //omitted. not useful for demonstration
+		}
+
+		function reduceInitial() {
+		  /* this is how our reduce function is seeded. similar to how inject or fold 
+		   works in functional languages. this map will contain the final counts 
+		   by the time we are done reducing our entire data set.*/
+		   return {};  
+		}
+
+		var ratingsAvgGroup;
+		ratingsAvgGroup = dim[subcategory].group().reduce(reduceAddAvg('Rating'), reduceRemoveAvg('Rating'), reduceInitAvg).order(orderValue);
+		// dim['ColorClassPerCategory'] = ndx.dimension(function(d) {return "Color="+d.ColorClass+" ;"+category+"="+d[category]; });
+		// var colorGroup = dim['ColorClassPerCategory'].group().reduceCount(function (d) { return d.ColorClass; }).order(orderValue).top(Infinity);
+		//console.log(colorGroup);
+		// dim['descriptor'] = ndx.dimension(function(d) {return d.Descriptor; });
+		// var descs = dim['descriptor'].groupAll().reduce(reduceAdd, reduceRemove, reduceInitial).value();
+		// //console.log(descs);
+		var processedAll = ratingsAvgGroup.all();
+		//console.log(processedAll);
+		if(processedAll.length > 0) {
+			//console.log(processedAll); 
+			//console.log(JSON.stringify(processedAll));
+			var processedAllDim = crossfilter(processedAll);
+			var processedDim = processedAllDim.dimension(function(d) { return d.value.count; });
+			if (categoryFilter != '') {
+				var catDimension = processedAllDim.dimension(function(d) { return d.key; });
+				catDimension.filter(function(d) {
+					var catFilters = categoryFilter.split(';');
+					var flag = 0;
+					for (var index in catFilters) {
+						if (d == catFilters[index]) {
+							flag = 1;
+						}
+					}
+					return flag;
+				});
+			}
+			subprocessed = processedDim.filter(function (d) { return d > 0; }).top(Infinity);
+			//console.log(subprocessed);
+			//return processed;
+		}
+		else {
+			subprocessed = [];
+		}
+		desc_index = 0;
+//		visualize();
+})
+.error(function() {
+	console.log(arguments);
+})
+.success(function () {
+});
+}
+function countClicked(data, sortby) {
+//	console.log(data);
+	// $('#reviewArea').html('Sort by <a href="#" onclick=countClicked("'+JSON.stringify(data)+'","rating")>Rating</a>');
+	// var sortString = 'Sort by <a href="#" onclick=countClicked("'+JSON.stringify(data)+'","rating")>Rating</a>';
+	var nameArray = data.name.split(';;');
+	var reviewArray = data.review.split(';;');
+	var ratingArray = data.rating.split(';;');
+	var producerArray = data.producer.split(';;');
+	var colorArray = data.color.split(';;');
+	//console.log(ratingArray);
+
+	var totalArray = [];
+	var htmlString = '';
+	var summaryString;
+	var singleObj;
+	for (var i in reviewArray) {
+		singleObj = [];
+		if (reviewArray[i] != '')
+		{
+			singleObj['name'] = nameArray[i];
+			singleObj['producer'] = producerArray[i];
+			singleObj['rating'] = ratingArray[i];
+			singleObj['color'] = colorArray[i];
+			singleObj['review'] = reviewArray[i];
+			totalArray.push(singleObj);
+		}
+	}
+	totalArray.sort(function(a,b) {
+		var a = a['rating'];
+		var b = b['rating'];
+		return a > b ? -1 : (a < b ? 1 : 0);
+	});
+
+	for (var i in totalArray) {
+		summaryString = '<b>'+totalArray[i].name+'</b>, '+totalArray[i].producer+' Rating: '+totalArray[i].rating;
+		htmlString += '<details><summary>'+summaryString+'</summary><h4>'+totalArray[i].name+'</h4>';
+		htmlString += '<p><i><b>Rating:</b>'+totalArray[i].rating+'&nbsp;&nbsp;</i> <b>Producer:</b> '+totalArray[i].producer+'</p><p><i><b>Color: </b>'+totalArray[i].color+'</i></p>';
+		htmlString += '<p>'+totalArray[i].review+'</p></details><hr>';
+	}
+	$('#reviewArea').html(htmlString);
+}
+
+function subCategory(row) {
+	if($('.subdrawArea')[0]) {
+		removesubCategory();
+	}
+	else {
+		console.log(d3.select(row).attr('y'));
+		chart.attr('height',60);
+		chart.attr('viewBox','0 '+(d3.select(row).attr('y')-30)+' 1300 60');
+		chart.attr('preserveAspectRatio', 'xMinYMin slice');
+	//subProcess(row.innerHTML);
+}
+}
+var nodata = 0;
+
+function subsubVisualize(chart, offset, index, max) {
+	var desc_string;
+	function preprocessDescriptors(descCount) {
+		var tuples = [];
+
+		for (var key in descCount) tuples.push([key, descCount[key]]);
+
+			tuples.sort(function(a, b) {
+				a = a[1];
+				b = b[1];
+
+				return a > b ? -1 : (a < b ? 1 : 0);
+			});
+
+		var newTuples = [];
+		var j = 0
+		for (var i in tuples) {
+			if (tuples[i][1] > 0) {
+				newTuples[j] = tuples[i];
+				j++;
+			}
+		}
+
+		newTuples = newTuples.slice(0,50);
+		return newTuples;		
+	}
+	function populateHTML(datum,index) {
+		var tuples = [];
+		desc_string = '<a>';
+
+		console.log(datum);
+		for (var key in datum.value.descCount) tuples.push([key, datum.value.descCount[key]]);
+
+			tuples.sort(function(a, b) {
+				a = a[1];
+				b = b[1];
+
+				return a > b ? -1 : (a < b ? 1 : 0);
+			});
+
+		tuples = tuples.slice(0, 5);
+
+			//console.log(tuples);
+			for (var i = 0; i < tuples.length; i++) {
+				if (typeof tuples[i][0] != 'undefined') {
+					var key = tuples[i][0];
+					desc_string += '<title>Occurences: '+tuples[i][1]+'</title>'+key+',</a><a> ';
+				}
+			}
+
+			desc_string = desc_string.substring(0,desc_string.length - 4);
+			//console.log(desc_string);
+			return desc_string;
+		}
+
+	$('#reviewArea').html('');
+	console.log("max value is "+max);
+	var parSummarySeedColorSwatch = ["#b2e2e2","#66c2a4","#2ca25f"];
+	var parSummaryColors = d3.scale.linear()
+	.domain(d3.range(0, 1, 1.0 / (parSummarySeedColorSwatch.length - 1)))
+	.range(parSummarySeedColorSwatch);
+	var parRange = d3.scale.linear().domain([0, 5]).range([0, 1]);
+	//console.log('Inside visualize');
+	//console.log(JSON.stringify(subprocessed));
+
+	if (subprocessed.length > 0) {
+		var y = d3.scale.linear()
+		.domain([0, 100])
+		.rangeRound([0, 100]);
+
+		       //console.log('Max count is'+JSON.stringify(subprocessed[0].value.count));
+		       var x = d3.scale.log()
+		       .range([0,130])
+		       .domain([1,max]).nice();
+		//console.log('inside subprocessed');
+		console.log(subprocessed.length+ 'is the length');
+
+		chart
+		.selectAll('.categoryText'+index)
+		.data(subprocessed)
+		.enter()
+		.append('text')
+		.attr('class','categoryText'+index)
+		.text(function(datum,index) { return datum.key;})
+		.attr('text-anchor','end')
+		.attr('font-size', '20px')
+		.attr('y',function(datum,index) {
+			return 50*index+20+offset+50; })
+		.attr('x',480-300)
+		.attr('style', 'fill:#000000');
+		// chart
+		// .selectAll('.ratingHeader')
+		// .data(subprocessed)
+		// .enter()
+		// .append('text')
+		// .attr('class','ratingHeader')
+		// .text("Avg. Rating")
+		// .attr('text-anchor','start')
+		// .attr('font-size', '10px')
+		// .attr('y',function(datum,index) { return (50*index+20+subVal+50)-20; })
+		// .attr('x',550)
+		// .attr('style', 'fill:#000000');
+
+		chart.selectAll('.ratingBar'+index)
+		.data(subprocessed)
+		.enter()
+		.append('rect')
+		.attr('class','ratingBar'+index)
+		.attr('x',550-300)
+		.attr('y',function(datum,index) { return (50*index+20+offset+50)-15; })
+		.attr('height',20)
+		.attr('width', 0)
+		.on('click', removesubCategory)
+		.transition().delay(function(datum,index) { return index*100})
+		.duration(1000)
+		.attr('width', function(datum,index) { return y(datum.value.avg) })
+		.attr('style', function(datum,index) { var color; if (datum.value.avg > 95) {
+			color = parSummaryColors(parRange(3));
+		} else if (datum.value.avg > 90) {
+			color = parSummaryColors(parRange(2));
+		} else if (datum.value.avg > 85) {
+			color = parSummaryColors(parRange(1));
+		} else {
+			color = parSummaryColors(parRange(0));
+		}
+		return 'fill:'+color;
+	});	
+
+		chart.selectAll('.ratingText'+index)
+		.data(subprocessed)
+		.enter()
+		.append('text')
+		.attr('class','ratingText'+index)
+		.text(function(datum,index) { return parseInt(datum.value.avg);})
+		.attr('text-anchor','end')
+		.attr('y',function(datum,index) { return 50*index+20+offset+50; })
+		.attr('x',function(datum,index) { return (550+datum.value.avg)-300 })
+		.attr('style', 'fill:#000000');
+
+
+		chart.selectAll('.countBar'+index)
+		.data(subprocessed)
+		.enter()
+		.append('rect')
+		.attr('class','countBar'+index)
+		.attr('y',function(datum,index) { return (50*index+20+offset+50)-15; })
+		.attr('x',700-300)
+		.attr('height',20)
+		.attr('width', function(datum,index) { return x(datum.value.count); })
+		.attr('style', 'fill:#ef8a62')
+		.on('click', function (datum) {
+
+			countClicked(datum.value);
+			//console.log(datum.value.review.split(';;'));
+
+		})
+		.on('mouseover', function (datum) {
+			d3.select(this).attr('style','fill:#fdbb84');
+		})
+		.on('mouseout', function (datum) {
+			d3.select(this).attr('style','fill:#ef8a62');
+		});
+
+		chart.selectAll('.countText'+index)
+		.data(subprocessed)
+		.enter()
+		.append('text')
+		.attr('class','countText'+index)
+		.text(function(datum,index) { return parseInt(datum.value.count);})
+		.attr('text-anchor','end')
+		.attr('y',function(datum,index) { return 50*index+20+offset+50; })
+		.attr('x',function(datum,index) { return (700+x(datum.value.count))-300 })
+		.attr('style', 'fill:#000000')
+		.on('click', function (datum) {
+			countClicked(datum.value);
+
+			//$('#reviewArea').html('<b>Inserting text inside review area</b>');
+			//console.log(datum.value.review.split(';;'));
+		})
+		.on('mouseover', function (datum) {
+			//console.log($(this).closest('.countBar'));
+			//$(this).closest('.countBar').attr('style','fill:#fdbb84');
+		})
+		.on('mouseout', function (datum) {
+			//$(this).closest('.countBar').attr('style','fill:#3182bd');
+		});
+
+
+		var subVal = 0;
+		chart.selectAll('.descBorder'+index)
+		.data(subprocessed)
+		.enter()
+		.append('rect')
+		.attr('class','descBorder'+index)
+		.attr('y',function(datum,index) { return (50*index+20+offset+50)-15; })
+		.attr('x',850-300)
+		.attr('height',30)
+		.attr('width', 380)
+		.attr('style', 'fill:none; stroke: black;')
+		.attr('pointer-events', 'all')
+		.on('click', function (datum) {
+			console.log('rect clicked');
+			var c = $(this).attr('class');
+				//$(this).remove();
+				console.log('inside desctext rewrite');
+				$('.chartText').remove();
+				$('.descText').remove();
+				chart.selectAll('.descText')
+				.data(processed)
+				.enter()
+				.append('text')
+				.attr('class','descText')
+				.html(populateHTML)
+				.attr('y',function(datum,index) { return (50*index+20+subVal+50)+5; })
+				.attr('x',860-300)
+				.attr('style', 'fill:#000000');
+				$('.descBorder').each(function (index) {
+					d3.select(this).transition()
+					.attr('height', 30)
+					.attr('width',380)
+					.attr('transform','translate(0,0)')
+					.duration(500)
+					.delay(0);
+				});
+				$('.countText').each(function (index) {
+					d3.select(this).transition()
+					.attr('transform','translate(0,0)')
+					.duration(500)
+					.delay(0);
+				});
+				$('.countBar').each(function (index) {
+					d3.select(this).transition()
+					.attr('transform','translate(0,0)')
+					.duration(500)
+					.delay(0);			});
+				$('.ratingBar').each(function (index) {
+					d3.select(this).transition()
+					.attr('transform','translate(0,0)')
+					.duration(500)
+					.delay(0);			});
+				$('.ratingText').each(function (index) {
+					d3.select(this).transition()
+					.attr('transform','translate(0,0)')
+					.duration(500)
+					.delay(0);			});
+				$('.categoryText').each(function (index) {
+					d3.select(this).transition()
+					.attr('transform','translate(0,0)')
+					.duration(500)
+					.delay(0);
+				});
+
+				var offset = '0';
+				var i = $('.descBorder').index(this);
+				$('.descText').each(function (index) {
+					if (index > i) {
+						d3.select(this).transition()
+						.attr('transform','translate(0,'+offset+')')
+						.duration(500)
+						.delay(500);
+					} else if (index == i) {
+						$(this).html('');
+						var xVal = parseInt($(this).attr('x'));
+						var initialX = xVal;
+						var yVal = []
+						yVal[0] = parseInt($(this).attr('y')) + 10;
+						console.log('setting to test');
+						var tuples = preprocessDescriptors(subprocessed[index].value.descCount);
+						var logScale = d3.scale.log()
+						.range([10,40])
+						.domain([1,tuples[0][1]])
+						.nice();
+						var prev;
+						chart.call(tip);
+						console.log(tuples);
+						chart.selectAll('.chartText')
+						.data(tuples)
+						.enter()
+						.append('svg:text')
+						.attr('class','chartText')
+						.on('mouseover', tip.show)
+						.on('mouseout', tip.hide)
+						.text(function(datum,i) { return datum[0]; })
+						.attr('y',-50)
+						.attr('text-anchor','start')
+						.attr('font-size',function(datum,i) { return logScale(datum[1])+'px';})
+						.transition()
+						.attr('x',function(datum,index) {
+							if (index > 0) {
+								var bbox = d3.select(prev).node().getBBox();
+								xVal += bbox.width+5;
+								yVal[index] = yVal[index-1];
+								
+								if (xVal > 550+300) {
+									xVal = initialX;
+									//console.log(yVal);
+									yVal[index] += 30;
+								}
+							}
+							prev = this;
+							return xVal;
+						})
+						.attr('y',function(datum,index) { console.log(yVal); return yVal[index]; })
+						.attr('style', 'fill:#000000')
+						.style('display','block')
+						.duration(800)
+						.delay(300);
+						offset = yVal[yVal.length-1] - parseInt($(this).attr('y')) - 10;
+					}
+				});
+$('.descBorder').each(function (index) {
+	if (index > i) {
+		d3.select(this).transition()
+		.attr('transform','translate(0,'+offset+')')
+		.duration(500)
+		.delay(500);
+	} else if (index == i) {
+		var height = offset + 40;
+		d3.select(this).transition()
+		.attr('height',height)
+		.attr('width',450)
+		.duration(500)
+		.delay(500);
+	}
+});
+$('.countText').each(function (index) {
+	if (index > i) {
+		d3.select(this).transition()
+		.attr('transform','translate(0,'+offset+')')
+		.duration(500)
+		.delay(500);
+	}
+});
+$('.countBar').each(function (index) {
+	if (index > i) {
+		d3.select(this).transition()
+		.attr('transform','translate(0,'+offset+')')
+		.duration(500)
+		.delay(500);
+	}
+});
+$('.ratingText').each(function (index) {
+	if (index > i) {
+		d3.select(this).transition()
+		.attr('transform','translate(0,'+offset+')')
+		.duration(500)
+		.delay(500);		
+	}
+});
+$('.categoryText').each(function (index) {
+	if (index > i) {
+		d3.select(this).transition()
+		.attr('transform','translate(0,'+offset+')')
+		.duration(500)
+		.delay(500);
+	}
+});
+$('.ratingBar').each(function (index) {
+	if (index > i) {
+		d3.select(this).transition()
+		.attr('transform','translate(0,'+offset+')')
+		.duration(500)
+		.delay(500);
+	}
+});
+offset = 0;
+			//$(this).nextAll().attr('transform','translate(0,50)');
+			//$(this).closest('.countText').nextAll().attr('transform','translate(0,50)');
+		});	
+
+
+		chart.selectAll('.descText'+index)
+		.data(subprocessed)
+		.enter()
+		.append('text')
+		.attr('class','descText'+index)
+		.html(populateHTML)
+		.attr('y',function(datum,index) {
+			return (50*index+20+offset+50)+5; })
+		.attr('x',860-300)
+		.attr('style', 'fill:#000000');
+	}
+	else {
+		chart.attr('width',1000)
+		.attr('height',1000)
+		.append('text')
+		.attr('class','nullSet')
+		.text('No sub sub data found')
+		.attr('text-anchor','start')
+		.attr('font-size', '20px')
+		.attr('y',100+nodata)
+		.attr('x',100)
+		.attr('style', 'fill:#000000');
+		nodata+=25;
+	}
+}
+function subVisualize() {
+
+	var desc_string;
+	function preprocessDescriptors(descCount) {
+		var tuples = [];
+
+		for (var key in descCount) tuples.push([key, descCount[key]]);
+
+			tuples.sort(function(a, b) {
+				a = a[1];
+				b = b[1];
+
+				return a > b ? -1 : (a < b ? 1 : 0);
+			});
+
+		var newTuples = [];
+		var j = 0
+		for (var i in tuples) {
+			if (tuples[i][1] > 0) {
+				newTuples[j] = tuples[i];
+				j++;
+			}
+		}
+
+		newTuples = newTuples.slice(0,50);
+		return newTuples;		
+	}
+	function populateHTML(datum,index) {
+		var tuples = [];
+		desc_string = '<a>';
+
+		console.log(datum);
+		for (var key in datum.value.descCount) tuples.push([key, datum.value.descCount[key]]);
+
+			tuples.sort(function(a, b) {
+				a = a[1];
+				b = b[1];
+
+				return a > b ? -1 : (a < b ? 1 : 0);
+			});
+
+		tuples = tuples.slice(0, 5);
+
+			//console.log(tuples);
+			for (var i = 0; i < tuples.length; i++) {
+				if (typeof tuples[i][0] != 'undefined') {
+					var key = tuples[i][0];
+					desc_string += '<title>Occurences: '+tuples[i][1]+'</title>'+key+',</a><a> ';
+				}
+			}
+
+			desc_string = desc_string.substring(0,desc_string.length - 4);
+			//console.log(desc_string);
+			return desc_string;
+		}
+
+	$('#reviewArea').html('');
+	var parSummarySeedColorSwatch = ["#b2e2e2","#66c2a4","#2ca25f"];
+	var parSummaryColors = d3.scale.linear()
+	.domain(d3.range(0, 1, 1.0 / (parSummarySeedColorSwatch.length - 1)))
+	.range(parSummarySeedColorSwatch);
+	var parRange = d3.scale.linear().domain([0, 5]).range([0, 1]);
+	d3.select('svg.subdrawArea').remove();
+	d3.select('svg.drawArea')
+	.remove();
+	//console.log('Inside visualize');
+	//console.log(JSON.stringify(processed));
+	chart = d3.select('#vis').append('svg').attr('class','drawArea');
+	var subVal = [];
+	subVal[0] = 0;
+	function subdraw(datum,index, max) {
+		console.log("key is "+datum.key);
+		//console.log("Index da");
+		//console.log(index);
+		//console.log("max val is "+maxVal);
+		subDraw(datum.key,index);
+		console.log('subprocessed returned');
+		//console.log(subprocessed);
+		subsubVisualize(chart, yVal-20, index, max);
+		subVal[index+1]=subVal[index]+subprocessed.length*50;
+	}
+
+	if (processed.length > 0) {
+		var y = d3.scale.linear()
+		.domain([0, 100])
+		.rangeRound([0, 100]);
+
+		       //console.log('Max count is'+JSON.stringify(processed[0].value.count));
+		       var x = d3.scale.log()
+		       .range([0,130])
+		       .domain([1,processed[0].value.count]).nice();
+		       var max = processed[0].value.count;
+		       console.log("max value is "+max);
+		//console.log('inside processed');
+		console.log(processed.length+ 'is the length');
+		chart.attr('width',1300)
+		.attr('height',5500)
+		.append('text')
+		.attr('class','ratingHeader')
+		.text('Avg. Rating')
+		.attr('text-anchor','start')
+		.attr('font-size', '20px')
+		.attr('y',28)
+		.attr('x',550-300)
+		.attr('style', 'fill:#000000');
+
+		var yVal;
+		chart
+		.selectAll('.categoryText')
+		.data(processed)
+		.enter()
+		.append('text')
+		.attr('class','categoryText')
+		.text(function(datum,index) { return datum.key;})
+		.attr('text-anchor','end')
+		.attr('font-size', '20px')
+		.attr('y',function(datum,index) {
+			yVal = 50*index+20+subVal[index]+50;
+			console.log('subdraw called');
+			console.log('subdraw called with max '+max);
+			subdraw(datum,index, max);
+			console.log("subdraw returned");
+			return 50*index+20+subVal[index]+50; })
+		.attr('x',480-300)
+		.attr('style', 'fill:#000000');
+		// chart
+		// .selectAll('.ratingHeader')
+		// .data(processed)
+		// .enter()
+		// .append('text')
+		// .attr('class','ratingHeader')
+		// .text("Avg. Rating")
+		// .attr('text-anchor','start')
+		// .attr('font-size', '10px')
+		// .attr('y',function(datum,index) { return (50*index+20+subVal+50)-20; })
+		// .attr('x',550)
+		// .attr('style', 'fill:#000000');
+
+		chart.selectAll('.ratingBar')
+		.data(processed)
+		.enter()
+		.append('rect')
+		.attr('class','ratingBar')
+		.attr('x',550-300)
+		.attr('y',function(datum,index) { return (50*index+20+subVal[index]+50)-15; })
+		.attr('height',20)
+		.attr('width', 0)
+		.on('click', removesubCategory)
+		.transition().delay(function(datum,index) { return index*100})
+		.duration(1000)
+		.attr('width', function(datum,index) { return y(datum.value.avg) })
+		.attr('style', function(datum,index) { var color; if (datum.value.avg > 95) {
+			color = parSummaryColors(parRange(3));
+		} else if (datum.value.avg > 90) {
+			color = parSummaryColors(parRange(2));
+		} else if (datum.value.avg > 85) {
+			color = parSummaryColors(parRange(1));
+		} else {
+			color = parSummaryColors(parRange(0));
+		}
+		return 'fill:'+color;
+	});	
+
+		chart.selectAll('.ratingText')
+		.data(processed)
+		.enter()
+		.append('text')
+		.attr('class','ratingText')
+		.text(function(datum,index) { return parseInt(datum.value.avg);})
+		.attr('text-anchor','end')
+		.attr('y',function(datum,index) { return 50*index+20+subVal[index]+50; })
+		.attr('x',function(datum,index) { return (550+datum.value.avg)-300 })
+		.attr('style', 'fill:#000000');
+
+
+		chart
+		.append('text')
+		.attr('class','countHeader')
+		.text("Reviews Count")
+		.attr('text-anchor','start')
+		.attr('font-size', '20px')
+		.attr('y',28)
+		.attr('x',700-300)
+		.attr('style', 'fill:#000000');
+
+
+
+		chart
+		.append('text')
+		.attr('class','descHeader')
+		.text("Top Descriptors")
+		.attr('text-anchor','start')
+		.attr('font-size', '20px')
+		.attr('y',28)
+		.attr('x',850-300)
+		.attr('style', 'fill:#000000');
+
+
+		chart.selectAll('.countBar')
+		.data(processed)
+		.enter()
+		.append('rect')
+		.attr('class','countBar')
+		.attr('y',function(datum,index) { return (50*index+20+subVal[index]+50)-15; })
+		.attr('x',700-300)
+		.attr('height',20)
+		.attr('width', function(datum,index) { return x(datum.value.count); })
+		.attr('style', 'fill:#3182bd')
+		.on('click', function (datum) {
+
+			countClicked(datum.value);
+			//console.log(datum.value.review.split(';;'));
+
+		})
+		.on('mouseover', function (datum) {
+			d3.select(this).attr('style','fill:#fdbb84');
+		})
+		.on('mouseout', function (datum) {
+			d3.select(this).attr('style','fill:#3182bd');
+		});
+
+		chart.selectAll('.countText')
+		.data(processed)
+		.enter()
+		.append('text')
+		.attr('class','countText')
+		.text(function(datum,index) { return parseInt(datum.value.count);})
+		.attr('text-anchor','end')
+		.attr('y',function(datum,index) { return 50*index+20+subVal[index]+50; })
+		.attr('x',function(datum,index) { return (700+x(datum.value.count))-300 })
+		.attr('style', 'fill:#000000')
+		.on('click', function (datum) {
+			countClicked(datum.value);
+
+			//$('#reviewArea').html('<b>Inserting text inside review area</b>');
+			//console.log(datum.value.review.split(';;'));
+		})
+		.on('mouseover', function (datum) {
+			//console.log($(this).closest('.countBar'));
+			//$(this).closest('.countBar').attr('style','fill:#fdbb84');
+		})
+		.on('mouseout', function (datum) {
+			//$(this).closest('.countBar').attr('style','fill:#3182bd');
+		});
+
+
+
+		chart.selectAll('.descBorder')
+		.data(processed)
+		.enter()
+		.append('rect')
+		.attr('class','countBar')
+		.attr('y',function(datum,index) { return (50*index+20+subVal[index]+50)-15; })
+		.attr('x',850-300)
+		.attr('height',30)
+		.attr('width', 380)
+		.attr('style', 'fill:none; stroke: black;')
+		.attr('pointer-events', 'all')
+		.on('click', function (datum) {
+			console.log('rect clicked');
+			var c = $(this).attr('class');
+				//$(this).remove();
+				console.log('inside desctext rewrite');
+				chart = d3.select('svg.drawArea');
+				$('.chartText').remove();
+				$('.descText').remove();
+				chart.selectAll('.descText')
+				.data(processed)
+				.enter()
+				.append('text')
+				.attr('class','descText')
+				.html(populateHTML)
+				.attr('y',function(datum,index) { return (50*index+20+subVal+50)+5; })
+				.attr('x',860-300)
+				.attr('style', 'fill:#000000');
+				$('.descBorder').each(function (index) {
+					d3.select(this).transition()
+					.attr('height', 30)
+					.attr('width',380)
+					.attr('transform','translate(0,0)')
+					.duration(500)
+					.delay(0);			
+				});
+				$('.countText').each(function (index) {
+					d3.select(this).transition()
+					.attr('transform','translate(0,0)')
+					.duration(500)
+					.delay(0);
+				});
+				$('.countBar').each(function (index) {
+					d3.select(this).transition()
+					.attr('transform','translate(0,0)')
+					.duration(500)
+					.delay(0);			});
+				$('.ratingBar').each(function (index) {
+					d3.select(this).transition()
+					.attr('transform','translate(0,0)')
+					.duration(500)
+					.delay(0);			});
+				$('.ratingText').each(function (index) {
+					d3.select(this).transition()
+					.attr('transform','translate(0,0)')
+					.duration(500)
+					.delay(0);			});
+				$('.categoryText').each(function (index) {
+					d3.select(this).transition()
+					.attr('transform','translate(0,0)')
+					.duration(500)
+					.delay(0);
+				});
+
+				var offset = '0';
+				var i = $('.descBorder').index(this);
+				$('.descText').each(function (index) {
+					if (index > i) {
+						d3.select(this).transition()
+						.attr('transform','translate(0,'+offset+')')
+						.duration(500)
+						.delay(500);
+					} else if (index == i) {
+						$(this).html('');
+						var xVal = parseInt($(this).attr('x'));
+						var initialX = xVal;
+						var yVal = []
+						yVal[0] = parseInt($(this).attr('y')) + 10;
+						console.log('setting to test');
+						var tuples = preprocessDescriptors(processed[index].value.descCount);
+						var logScale = d3.scale.log()
+						.range([10,40])
+						.domain([1,tuples[0][1]])
+						.nice();
+						var prev;
+						chart.call(tip);
+						console.log(tuples);
+						chart.selectAll('.chartText')
+						.data(tuples)
+						.enter()
+						.append('svg:text')
+						.attr('class','chartText')
+						.on('mouseover', tip.show)
+						.on('mouseout', tip.hide)
+						.text(function(datum,i) { return datum[0]; })
+						.attr('y',-50)
+						.attr('text-anchor','start')
+						.attr('font-size',function(datum,i) { return logScale(datum[1])+'px';})
+						.transition()
+						.attr('x',function(datum,index) {
+							if (index > 0) {
+								var bbox = d3.select(prev).node().getBBox();
+								xVal += bbox.width+5;
+								yVal[index] = yVal[index-1];
+								
+								if (xVal > 550+300) {
+									xVal = initialX;
+									//console.log(yVal);
+									yVal[index] += 30;
+								}
+							}
+							prev = this;
+							return xVal;
+						})
+						.attr('y',function(datum,index) { console.log(yVal); return yVal[index]; })
+						.attr('style', 'fill:#000000')
+						.style('display','block')
+						.duration(800)
+						.delay(300);
+						offset = yVal[yVal.length-1] - parseInt($(this).attr('y')) - 10;
+					}
+				});
+$('.descBorder').each(function (index) {
+	if (index > i) {
+		d3.select(this).transition()
+		.attr('transform','translate(0,'+offset+')')
+		.duration(500)
+		.delay(500);
+	} else if (index == i) {
+		var height = offset + 40;
+		d3.select(this).transition()
+		.attr('height',height)
+		.attr('width',450)
+		.duration(500)
+		.delay(500);
+	}
+});
+$('.countText').each(function (index) {
+	if (index > i) {
+		d3.select(this).transition()
+		.attr('transform','translate(0,'+offset+')')
+		.duration(500)
+		.delay(500);
+	}
+});
+$('.countBar').each(function (index) {
+	if (index > i) {
+		d3.select(this).transition()
+		.attr('transform','translate(0,'+offset+')')
+		.duration(500)
+		.delay(500);
+	}
+});
+$('.ratingText').each(function (index) {
+	if (index > i) {
+		d3.select(this).transition()
+		.attr('transform','translate(0,'+offset+')')
+		.duration(500)
+		.delay(500);		
+	}
+});
+$('.categoryText').each(function (index) {
+	if (index > i) {
+		d3.select(this).transition()
+		.attr('transform','translate(0,'+offset+')')
+		.duration(500)
+		.delay(500);
+	}
+});
+$('.ratingBar').each(function (index) {
+	if (index > i) {
+		d3.select(this).transition()
+		.attr('transform','translate(0,'+offset+')')
+		.duration(500)
+		.delay(500);
+	}
+});
+offset = 0;
+			//$(this).nextAll().attr('transform','translate(0,50)');
+			//$(this).closest('.countText').nextAll().attr('transform','translate(0,50)');
+		});	
+
+		chart.selectAll('.descText')
+		.data(processed)
+		.enter()
+		.append('text')
+		.attr('class','descText')
+		.html(populateHTML)
+		.attr('y',function(datum,index) {
+			return (50*index+20+subVal[index]+50)+5; })
+		.attr('x',860-300)
+		.attr('style', 'fill:#000000');
+	}
+	else {
+		chart.attr('width',1000)
+		.attr('height',1000)
+		.append('text')
+		.attr('class','nullSet')
+		.text('No subdata found')
+		.attr('text-anchor','start')
+		.attr('font-size', '20px')
+		.attr('y',100+nodata)
+		.attr('x',100)
+		.attr('style', 'fill:#000000');
+		nodata+=25
+	}
+	//$('.descText').html(desc_string);
+}
+function addTag(content) {
+	//$("#myTags").tagit("tags");
+	if (content.value != '') {
+		$("#myTags").tagit("add",{label:content.id+': '+content.value, value:content.id});
+	}
+}
+
+function removesubCategory() {
+	// console.log('remove category entered');
+	d3.select('svg.subdrawArea').remove();
+	chart.attr('height',1300);
+	chart.attr('viewBox','0 0 1300 1300');
+
+
+}
+
+function visualize() {
+	var desc_string;
+	var subVal = 0;
+	var tip = d3.tip()
+	.attr('class', 'd3-tip')
+	.offset([-10, 0])
+	.html(function(d) {
+		return "<strong>Count:</strong> <span style='color:red'>" + d[1] + "</span>";
+	});
+
+	function ratingsAreaChart(datum, index) {
+		var  ratings = datum.split(";;");
+		var count = {};
+		var max = 0;
+		for (var rating in ratings) {
+			if (!isNaN(parseInt(ratings[rating]))) {
+				count[ratings[rating]] = count[ratings[rating]] ? count[ratings[rating]]+1 : 1;
+				if (count[ratings[rating]] > max) {
+					max = count[ratings[rating]];
+				}
+			}
+		}
+		var ratingsData = {'max' : max, 'count': count };
+		return ratingsData;
+	}
+	function preprocessDescriptors(descCount) {
+		var tuples = [];
+
+		for (var key in descCount) tuples.push([key, descCount[key]]);
+
+			tuples.sort(function(a, b) {
+				a = a[1];
+				b = b[1];
+
+				return a > b ? -1 : (a < b ? 1 : 0);
+			});
+
+		var newTuples = [];
+		var j = 0
+		for (var i in tuples) {
+			if (tuples[i][1] > 0) {
+				newTuples[j] = tuples[i];
+				j++;
+			}
+		}
+
+		newTuples = newTuples.slice(0,75);
+		return newTuples;		
+	}
+	function populateHTML(datum,index) {
+		var tuples = [];
+		desc_string = '<a>';
+
+		console.log(datum);
+		for (var key in datum.value.descCount) tuples.push([key, datum.value.descCount[key]]);
+
+			tuples.sort(function(a, b) {
+				a = a[1];
+				b = b[1];
+
+				return a > b ? -1 : (a < b ? 1 : 0);
+			});
+
+		tuples = tuples.slice(0, 5);
+
+			//console.log(tuples);
+			for (var i = 0; i < tuples.length; i++) {
+				if (typeof tuples[i][0] != 'undefined') {
+					var key = tuples[i][0];
+					desc_string += '<title>Occurences: '+tuples[i][1]+'</title>'+key+',</a><a> ';
+				}
+			}
+
+			desc_string = desc_string.substring(0,desc_string.length - 4);
+			//console.log(desc_string);
+			return desc_string;
+		}
+		$('#reviewArea').html('');
+		var parSummarySeedColorSwatch = ["#b2e2e2","#66c2a4","#2ca25f"];
+		var parSummaryColors = d3.scale.linear()
+		.domain(d3.range(0, 1, 1.0 / (parSummarySeedColorSwatch.length - 1)))
+		.range(parSummarySeedColorSwatch);
+		var parRange = d3.scale.linear().domain([0, 5]).range([0, 1]);
+		d3.select('svg.subdrawArea').remove();
+		d3.select('svg.drawArea')
+		.remove();
+	//console.log('Inside visualize');
+	//console.log(JSON.stringify(processed));
+	chart = d3.select('#vis').append('svg').attr('class','drawArea');
+
+	if (processed.length > 0) {
+		var y = d3.scale.linear()
+		.rangeRound([0, 100])
+		.domain([0, 100]);
+
+		       //console.log('Max count is'+JSON.stringify(processed[0].value.count));
+		       var x = d3.scale.log()
+		       .range([1,130])
+		       .domain([1,processed[0].value.count])
+		       .nice();
+		//console.log('inside processed');
+		console.log(processed.length+ 'is the length');
+		chart.attr('width',1300)
+		.attr('height',1300)
+		.append('text')
+		.attr('class','ratingHeader')
+		.text('Avg. Rating')
+		.attr('text-anchor','start')
+		.attr('font-size', '20px')
+		.attr('y',28)
+		.attr('x',550-300)
+		.attr('style', 'fill:#000000');
+
+		chart
+		.selectAll('.categoryText')
+		.data(processed)
+		.enter()
+		.append('text')
+		.attr('class','categoryText')
+		.text(function(datum,index) { return datum.key;})
+		.attr('text-anchor','end')
+		.attr('font-size', '20px')
+		.attr('y',function(datum,index) { return 50*index+20+subVal+50; })
+		.attr('x',480-300)
+		.attr('style', 'fill:#000000')
+		.on('click', function (datum) {
+		});
+
+		chart.selectAll('.ratingBar')
+		.data(processed)
+		.enter()
+		.append('rect')
+		.attr('class','ratingBar')
+		.attr('x',550-300)
+		.attr('y',function(datum,index) { return (50*index+20+subVal+50)-15; })
+		.attr('height',20)
+		.attr('width', 0)
+		.on('click', removesubCategory)
+		.transition().delay(function(datum,index) { return index*100})
+		.duration(1000)
+		.attr('width', function(datum,index) { return y(datum.value.avg) })
+		.attr('style', function(datum,index) { var color; if (datum.value.avg > 95) {
+			color = parSummaryColors(parRange(3));
+		} else if (datum.value.avg > 90) {
+			color = parSummaryColors(parRange(2));
+		} else if (datum.value.avg > 85) {
+			color = parSummaryColors(parRange(1));
+		} else {
+			color = parSummaryColors(parRange(0));
+		}
+		return 'fill:'+color;
+	});	
+
+		chart.selectAll('.ratingText')
+		.data(processed)
+		.enter()
+		.append('text')
+		.attr('class','ratingText')
+		.text(function(datum,index) { return parseInt(datum.value.avg);})
+		.attr('text-anchor','end')
+		.attr('y',function(datum,index) { return 50*index+20+subVal+50; })
+		.attr('x',function(datum,index) { return (550+datum.value.avg)-300 })
+		.attr('style', 'fill:#000000');
+
+
+		chart
+		.append('text')
+		.attr('class','countHeader')
+		.text("Reviews Count")
+		.attr('text-anchor','start')
+		.attr('font-size', '20px')
+		.attr('y',28)
+		.attr('x',700-300)
+		.attr('style', 'fill:#000000');
+
+
+
+		chart
+		.append('text')
+		.attr('class','descHeader')
+		.text("Top Descriptors")
+		.attr('text-anchor','start')
+		.attr('font-size', '20px')
+		.attr('y',28)
+		.attr('x',850-300)
+		.attr('style', 'fill:#000000');
+
+
+		chart.selectAll('.countBar')
+		.data(processed)
+		.enter()
+		.append('rect')
+		.attr('class','countBar')
+		.attr('y',function(datum,index) { return (50*index+20+subVal+50)-15; })
+		.attr('x',700-300)
+		.attr('height',20)
+		.attr('width', function(datum,index) { return x(datum.value.count); })
+		.attr('style', 'fill:#3182bd')
+		.on('click', function (datum) {
+
+			countClicked(datum.value);
+			//console.log(datum.value.review.split(';;'));
+
+		})
+		.on('mouseover', function (datum) {
+			d3.select(this).attr('style','fill:#fdbb84');
+		})
+		.on('mouseout', function (datum) {
+			d3.select(this).attr('style','fill:#3182bd');
+		});
+
+		chart.selectAll('.countText')
+		.data(processed)
+		.enter()
+		.append('text')
+		.attr('class','countText')
+		.text(function(datum,index) { return parseInt(datum.value.count);})
+		.attr('text-anchor','end')
+		.attr('y',function(datum,index) { return 50*index+20+subVal+50; })
+		.attr('x',function(datum,index) { return (700+x(datum.value.count))-300 })
+		.attr('style', 'fill:#000000')
+		.on('click', function (datum) {
+			countClicked(datum.value);
+
+			//$('#reviewArea').html('<b>Inserting text inside review area</b>');
+			//console.log(datum.value.review.split(';;'));
+		})
+		.on('mouseover', function (datum) {
+			//console.log($(this).closest('.countBar'));
+			//$(this).closest('.countBar').attr('style','fill:#fdbb84');
+		})
+		.on('mouseout', function (datum) {
+			//$(this).closest('.countBar').attr('style','fill:#3182bd');
+		});
+
+
+chart.selectAll('.descText')
+.data(processed)
+.enter()
+.append('text')
+.attr('class','descText')
+.html(populateHTML)
+.attr('y',function(datum,index) { return (50*index+20+subVal+50)+5; })
+.attr('x',860-300)
+.attr('style', 'fill:#000000');
+
+		chart.selectAll('.descBorder')
+		.data(processed)
+		.enter()
+		.append('rect')
+		.attr('class','descBorder')
+		.attr('y',function(datum,index) { return (50*index+20+subVal+50)-15; })
+		.attr('x',850-300)
+		.attr('height',30)
+		.attr('width', 380)
+		.attr('style', 'fill:none; stroke: black;')
+		.attr('pointer-events', 'all')
+		.on('click', function (datum) {
+			console.log('rect clicked');
+			var c = $(this).attr('class');
+				//$(this).remove();
+				console.log('inside desctext rewrite');
+				chart = d3.select('svg.drawArea');
+				$('.chartText').remove();
+				$('.descText').remove();
+				$('.chartBar').remove();
+				chart.selectAll('.descText')
+				.data(processed)
+				.enter()
+				.append('text')
+				.attr('class','descText')
+				.html(populateHTML)
+				.attr('y',function(datum,index) { return (50*index+20+subVal+50)+5; })
+				.attr('x',860-300)
+				.attr('style', 'fill:#000000');
+				$('.descBorder').each(function (index) {
+					d3.select(this).transition()
+					.attr('height', 30)
+					.attr('width',380)
+					.attr('transform','translate(0,0)')
+					.duration(500)
+					.delay(0);			
+				});
+				$('.countText').each(function (index) {
+					d3.select(this).transition()
+					.attr('transform','translate(0,0)')
+					.duration(500)
+					.delay(0);
+				});
+				$('.countBar').each(function (index) {
+					d3.select(this).transition()
+					.attr('transform','translate(0,0)')
+					.duration(500)
+					.delay(0);			});
+				$('.ratingBar').each(function (index) {
+					d3.select(this).transition()
+					.attr('transform','translate(0,0)')
+					.duration(500)
+					.delay(0);			});
+				$('.ratingText').each(function (index) {
+					d3.select(this).transition()
+					.attr('transform','translate(0,0)')
+					.duration(500)
+					.delay(0);			});
+				$('.categoryText').each(function (index) {
+					d3.select(this).transition()
+					.attr('transform','translate(0,0)')
+					.duration(500)
+					.delay(0);
+				});
+
+				var offset = '0';
+				var i = $('.descBorder').index(this);
+				$('.descText').each(function (index) {
+					if (index > i) {
+						d3.select(this).transition()
+						.attr('transform','translate(0,300)')
+						.duration(500)
+						.delay(500);
+					} else if (index == i) {
+						$(this).html('');
+						var xVal = parseInt($(this).attr('x'));
+						var initialX = xVal;
+						var yVal = parseInt($(this).attr('y'));
+						console.log('setting to test');
+						var tuples = preprocessDescriptors(processed[index].value.descCount);
+						var logScale = d3.scale.log()
+						.range([10,40])
+						.domain([1,tuples[0][1]])
+						.nice();
+						var prev;
+						chart.call(tip);
+						console.log(tuples);
+						chart.selectAll('.chartText')
+						.data(tuples)
+						.enter()
+						.append('svg:text')
+						.attr('class','chartText')
+						.on('mouseover', function(datum) {
+							console.log('Tip hovered');
+		var ratingsData = ratingsAreaChart(processed[index].value.rating, index);
+		var x = d3.scale.linear()
+    .range([50, 300]);
+
+var y = d3.scale.linear()
+    .range([200, 0]);
+
+var area = d3.svg.area()
+     .x(function(d) { return x(d[0]); })
+     .y0(200)
+     .y1(function(d) { return y(d[1]); });
+
+	var xVal = parseInt($(this).attr('x'))-50;
+	var yVal = parseInt($(this).attr('y'))+50;
+
+var svg = d3.select('svg>g.histo');
+
+  x.domain([50,100]);
+  y.domain([0, ratingsData.max]);
+
+console.log(ratingsData.count);
+
+var array = $.map(ratingsData.count, function(value, index) {
+    return [[parseInt(index), value]];
+});
+
+console.log(array);
+  svg.append("path")
+  .datum(array)
+      .attr("class", "area")
+      .attr('visibility','hidden')
+      .attr("transform", "translate("+(xVal)+"," +yVal + ")")
+      .attr("d", area)
+.transition()
+      						.attr('visibility','visible')
+      						.ease("linear")
+						.delay(1100);
+
+							tip.show(datum);
+						})
+						.on('mouseout', tip.hide)
+						.text(function(datum,i) { return datum[0]; })
+						.attr('y',-50)
+						.attr('text-anchor','start')
+						.attr('font-size', '15px')
+						.transition()
+						.attr('x', function(datum, index) {
+							return xVal+(100*parseInt(index/15));
+						})
+						.attr('y', function(datum, index) {
+							return yVal+(20*(index%15));
+						})
+						.attr('style', 'fill:#000000')
+						.style('display','block')
+						.duration(800)
+						.delay(300);
+						//offset = yVal[yVal.length-1] - parseInt($(this).attr('y')) - 10;
+					}
+				});
+				$('.descText').each(function (index) {
+					if (index == i) {
+						$(this).html('');
+						var xVal = parseInt($(this).attr('x'));
+						var initialX = xVal;
+						var yVal = parseInt($(this).attr('y'));
+						console.log('setting to test');
+						var tuples = preprocessDescriptors(processed[index].value.descCount);
+						var logScale = d3.scale.linear()
+						.range([0,80])
+						.domain([0,tuples[0][1]])
+						.nice();
+						var prev;
+						chart.call(tip);
+						console.log(tuples);
+
+						chart.selectAll('.chartBar')
+						.data(tuples)
+						.enter()
+						.append('svg:rect')
+						.attr('class','chartBar')
+						.attr('y',-50)
+						.on('mouseover', tip.show)
+						.on('mouseout', tip.hide)
+						.text(function(datum,i) { return datum[0]; })
+						.transition()
+						.attr('x', function(datum, index) {
+							return xVal+(100*parseInt(index/15));
+						})
+						.attr('y', function(datum, index) {
+							return yVal+2+(20*(index%15));
+						})
+						.attr('height','3px')
+						.attr('width', function(datum, index) {
+							return logScale(datum[1]);
+						})
+						.attr('style', 'fill:#3182bd')
+						.style('display','block')
+						.duration(800)
+						.delay(300);
+						//offset = yVal[yVal.length-1] - parseInt($(this).attr('y')) - 10;
+					}
+				});
+$('.descBorder').each(function (index) {
+	if (index > i) {
+		d3.select(this).transition()
+		.attr('transform','translate(0,300)')
+		.duration(500)
+		.delay(500);
+	} else if (index == i) {
+		var height = offset + 40;
+		d3.select(this).transition()
+		.attr('height',310)
+		.attr('width',500)
+		.duration(500)
+		.delay(500);
+	}
+});
+$('.countText').each(function (index) {
+	if (index > i) {
+		d3.select(this).transition()
+		.attr('transform','translate(0,300)')
+		.duration(500)
+		.delay(500);
+	}
+});
+$('.countBar').each(function (index) {
+	if (index > i) {
+		d3.select(this).transition()
+		.attr('transform','translate(0,300)')
+		.duration(500)
+		.delay(500);
+	}
+});
+$('.ratingText').each(function (index) {
+	if (index > i) {
+		d3.select(this).transition()
+		.attr('transform','translate(0,300)')
+		.duration(500)
+		.delay(500);		
+	}
+});
+$('.categoryText').each(function (index) {
+	if (index > i) {
+		d3.select(this).transition()
+		.attr('transform','translate(0,300)')
+		.duration(500)
+		.delay(500);
+	}
+});
+$('.ratingBar').each(function (index) {
+	if (index > i) {
+		d3.select(this).transition()
+		.attr('transform','translate(0,300)')
+		.duration(500)
+		.delay(500);
+	} else if (index == i) {
+		$('.histo').remove();
+		var ratingsData = ratingsAreaChart(processed[index].value.rating, index);
+		var x = d3.scale.linear()
+    .range([50, 300]);
+
+var y = d3.scale.linear()
+    .range([200, 0]);
+
+var xAxis = d3.svg.axis()
+    .scale(x)
+    .orient("bottom");
+
+var yAxis = d3.svg.axis()
+    .scale(y)
+    .orient("left");
+
+var area = d3.svg.area()
+     .x(function(d) { return x(d[0]); })
+     .y0(200)
+     .y1(function(d) { return y(d[1]); });
+
+	var xVal = parseInt($(this).attr('x'))-50;
+	var yVal = parseInt($(this).attr('y'))+50;
+
+var svg = d3.select('svg').append('g').attr('x',xVal).attr('y',yVal).attr('class', 'histo');
+
+  x.domain([50,100]);
+  y.domain([0, ratingsData.max]);
+
+console.log(ratingsData.count);
+
+var array = $.map(ratingsData.count, function(value, index) {
+    return [[parseInt(index), value]];
+});
+
+console.log(array);
+  svg.append("path")
+  .datum(array)
+      .attr("class", "area")
+      .attr('visibility','hidden')
+      .attr("transform", "translate("+(xVal)+"," +yVal + ")")
+      .attr("d", area)
+.transition()
+      						.attr('visibility','visible')
+      						.ease("linear")
+						.delay(1100);
+
+  svg.append("g")
+      .attr("class", "xaxis")
+      .attr('visibility','hidden')
+      .attr("transform", "translate("+(xVal)+"," +(yVal+200)+ ")")
+      .call(xAxis)
+      						.transition()
+      						.attr('visibility','visible')
+      						.ease("linear")
+						.delay(1100);
+						d3.select('.xaxis')
+						.append('text')
+						      .attr("x", 175)
+						      .attr('dy', 35)
+						.style('text-anchor','middle')
+						.text('Rating');
+
+  svg.append("g")
+      .attr("class", "yaxis")
+      .attr('visibility','hidden')
+      .attr("transform", "translate("+(xVal+50)+","+yVal+")")      
+      .call(yAxis)
+						.transition()
+      						.attr('visibility','visible')
+      						.ease("linear")
+						.delay(1100);
+						d3.select('.yaxis')
+						.append('text')
+						      .attr("y", -40)
+						      .attr('dx', -55)
+      .attr("transform", "rotate(-90)")
+						.style('text-anchor','end')
+						.text('Count');
+	}
+});
+offset = 0;
+			//$(this).nextAll().attr('transform','translate(0,50)');
+			//$(this).closest('.countText').nextAll().attr('transform','translate(0,50)');
+		});	
+
+}
+else {
+	chart.attr('width',1000)
+	.attr('height',1000)
+	.append('text')
+	.attr('class','nullSet')
+	.text('No data found')
+	.attr('text-anchor','start')
+	.attr('font-size', '20px')
+	.attr('y',100+nodata)
+	.attr('x',100)
+	.attr('style', 'fill:#000000');
+	nodata+=25;
+}
+	//$('.descText').html(desc_string);
+
+	// console.log(parRange(1));
+	// console.log(parRange(2));
+	// console.log(parRange(3));
+}
+function addTag(content) {
+	//$("#myTags").tagit("tags");
+	updateFilters(content);
+	if (content.value != '') {
+		$("#myTags").tagit("createTag",content.id+': '+content.value);
+	}
+}
+
+function resetFilters() {
+	var filters = $("#myTags").tagit("removeAll");
+	$('select').not('.catSelectors').each(function () {
+		$(this).val('');
+	})
+}
+
+function find(key, array) {
+  // The variable results needs var in this case (without 'var' a global variable is created)
+  for (var i = 0; i < array.length; i++) {
+  	if (array[i] == key) {
+  		return i;
+  	}
+  }
+  return -1;
+}
+
+function updateViz() {
+	var index;
+	var subcat = $('#subCategory').val();
+	var htmlarray = ['','Reviewer','Color','Variety','Region'];
+	var classarray = ['','Source','ColorClass','Variety','Region'];
+	index = find($('#Category').val(),classarray);
+	htmlarray.splice(index,1);
+	classarray.splice(index,1);
+	var htmlstring;
+	for(index in htmlarray) {
+		htmlstring += "<option value='"+classarray[index]+"'>"+htmlarray[index]+"</option>"		
+	}
+	$('#subCategory').html(htmlstring);
+	$('#subCategory').val(subcat);
+	subcat = $('#subCategory').val();
+	console.log("subcat is: "+subcat);
+	if(!subcat) {
+		loadData();		
+	}
+	else {
+		subProcess();
+	}
+
+}
+</script>
+</head>
+<body onload='populateFilters(); loadData();'>
+	<input type='hidden' value='' id='total'>
+	<input type='hidden' value='' id='current'>
+	<div class='pure-g'>
+		<div class='pure-u-1-24'>
+		</div>
+		<div class='pure-u-2-3'>
+			<form class="pure-form pure-form-stacked">
+				<legend>Filters</legend>
+				<fieldset>
+					<div id='filter' class='pure-g'>
+						<div class='pure-u-1-3'>
+							<label for="Producer">Producer</label>
+							<select id='Producer' class='pure-input-1-'+index onchange='addTag(this)'><option></option></select>	
+						</div>
+						<div class='pure-u-1-3'>
+							<label for="ColorClass">Color</label>
+							<select id='ColorClass' class='pure-input-1-'+index onchange='addTag(this)'><option></option></select>
+						</div>
+
+						<div class='pure-u-1-3'>
+							<label for="Region">Region</label>
+							<select id='Region' class='pure-input-1-'+index onchange='addTag(this)'><option></option></select>
+						</div>
+						<div class='pure-u-1-3'>
+							<label for="Variety">Variety</label>
+							<select id='Variety' class='pure-input-1-'+index onchange='addTag(this)'><option></option></select>
+						</div>
+						<div class='pure-u-1-3'>
+							<label for="maturityShow">Maturity</label>
+							<select id='maturityShow' class='pure-input-1-'+index onchange='addTag(this)'><option></option></select>
+						</div>
+						<div class='pure-u-1-3'>
+							<label for="Vintage">Vintage</label>
+							<select id='Vintage' class='pure-input-1-'+index onchange='addTag(this)'><option></option></select>
+						</div>
+						<div class='pure-u-1-3'>
+							<label for="Source">Reviewer</label>
+							<select id='Source' class='pure-input-1-'+index onchange='addTag(this)'><option></option></select>
+						</div>
+						<div class='pure-u-1-3'>
+							<label for="Locale">Locale</label>
+							<select id='Locale' class='pure-input-1-'+index onchange='addTag(this)'><option></option></select>
+						</div>
+						<div class='pure-u-1-3'>
+							<h4 id='currentShow' style='padding: 10px 0px 0px 40px; display:inline-block;'></h4>
+							<h4 id='totalShow' style='display:inline-block'></h4>							
+						</div>
+					</div>
+				</fieldset>
+			</div>
+		</div>
+		<div class='pure-g'>
+			<div class='pure-u-1-24'>
+			</div>
+			<div class='pure-u-1-2'>
+
+				<label for="myTags">Available Filters</label> <a href='#' onclick='resetFilters();'>reset</a>
+				<ul id="myTags">
+					<!-- Existing list items will be pre-added to the tags -->
+				</ul>
+			</div>
+			<div class='pure-u-2-5' stype="position:relative">
+				<div style="position:absolute; left:980px; top:-10px" >
+					<h3>Reviews</h3>
+<!-- 					<svg width='1000' height='1000'>
+						<rect y='0' x='0' height='8000' width='400' style="fill: none; stroke: black;"></rect>
+					</svg> -->
+				</div>
+				<div id='reviewArea' style="position:absolute; left:990px; width: 500px; height: 500px; top: 40px; overflow: auto; z-index: 3" >
+				</div>
+			</div>
+		</div>
+		<div>
+			<form class="pure-form pure-form-stacked">
+				<label for="Category">Category</label>
+				<select id="Category" class='catSelectors' onchange="updateViz()">
+					<option value="Source">Reviewer</option>
+					<option value="ColorClass">Color</option>
+					<option value="Variety">Variety</option>
+					<option value="Region">Region</option>
+				</select>
+				<label for="subCategory">Sub Category</label>
+				<select id="subCategory" class='catSelectors' onchange="updateViz()">
+					<option value=""></option>
+					<option value="ColorClass">Color</option>
+					<option value="Variety">Variety</option>
+					<option value="Region">Region</option>
+				</select>
+			</div>
+			<div id='vis'></div>
+		</form>
+
+	</body>
+	</html>
