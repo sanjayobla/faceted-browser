@@ -1,8 +1,15 @@
 (function($) {
+	$.fn.scrollView = function () {
+	    return this.each(function () {
+		$('html, body').animate({
+		    scrollTop: $(this).offset().top
+		}, 1000);
+	    });
+	}
     $.fn.vis = function(options) {
 		var defaults = {
 			data: undefined,
-			height: 1300,
+			height: 2300,
 			width: 1300
 		}, opts = $.extend(true, {}, defaults, options);
 
@@ -16,7 +23,7 @@
 
 		var xRating = d3.scale.linear()
 		       .range([1,130])
-		       .domain([80,opts.data.max_avg])
+		       .domain([50,opts.data.max_avg])
 		       .nice();
 		chart = d3.select('#vis')
 			.append('svg')
@@ -24,6 +31,61 @@
 			.attr('width', opts.width)
 			.attr('height', opts.height);
 		
+		chart
+		.append('text')
+		.attr('class','categoryTitle')
+		.text($('#category').val())
+		.attr('text-anchor','start')
+		.attr('font-size', '20px')
+		.attr('y',28)
+		.attr('x',550-500)
+		.attr('style', 'fill:#000000');
+
+		chart
+		.append('text')
+		.attr('class','ratingTitle')
+		.text('Avg. Rating')
+		.attr('text-anchor','start')
+		.attr('font-size', '20px')
+		.attr('y',28)
+		.attr('x',550-300)
+		.attr('style', 'fill:#000000');
+		
+		chart
+		.append('text')
+		.attr('class','countTitle')
+		.text('Count')
+		.attr('text-anchor','start')
+		.attr('font-size', '20px')
+		.attr('y',28)
+		.attr('x',550-100)
+		.attr('style', 'fill:#000000');
+		
+		chart
+		.append('text')
+		.attr('class','descriptorTitle')
+		.text('Descriptors')
+		.attr('text-anchor','start')
+		.attr('font-size', '20px')
+		.attr('y',28)
+		.attr('x',650)
+		.attr('style', 'fill:#000000');
+		
+		chart.selectAll('.category')
+		.data(opts.data.rows)
+		.enter()
+		.append('text')
+		.attr('class', function (datum,index) {
+			return 'category row'+index;
+		})
+		.attr('x', 550-500)
+		.attr('y', function (datum,index) {
+			return 50*index+50+15;
+		})
+		.html(function (datum,index) {
+			return datum._id;
+		});
+
 		chart.selectAll('.countBar')
 		.data(opts.data.rows)
 		.enter()
@@ -41,20 +103,16 @@
 			return xCount(datum.count);
 		});
 
-		chart.selectAll('.category')
+		chart.selectAll('.countText')
 		.data(opts.data.rows)
 		.enter()
 		.append('text')
-		.attr('class', function (datum,index) {
-			return 'category row'+index;
-		})
-		.attr('x', 550-500)
-		.attr('y', function (datum,index) {
-			return 50*index+50+15;
-		})
-		.html(function (datum,index) {
-			return datum._id;
-		});
+		.attr('class','countText')
+		.text(function(datum,index) { return parseInt(datum.count);})
+		.attr('text-anchor','end')
+		.attr('y',function(datum,index) { return 50*index+50+15; })
+		.attr('x',function(datum,index) { return 550-100+xCount(datum.count)-5; })
+		.attr('style', 'fill:#000000')
 		
 		chart.selectAll('.ratingBar')
 		.data(opts.data.rows)
@@ -67,11 +125,26 @@
 		.attr('y', function (datum,index) {
 			return 50*index+50;
 		})
+		.attr('style', function (datum, index) {
+			if (datum.average >=85) return 'fill:#91cf60';
+			if (datum.average >= 75) return 'fill:#fc8d59';
+			else return 'fill:#FF7878';
+		})
 		.attr('height',20)
 		.attr('width',function (datum,index) {
 			return xRating(datum.average);
 		});
             
+		chart.selectAll('.ratingText')
+		.data(opts.data.rows)
+		.enter()
+		.append('text')
+		.attr('class','ratingText')
+		.text(function(datum,index) { return parseInt(datum.average);})
+		.attr('text-anchor','end')
+		.attr('y',function(datum,index) { return 50*index+50+15; })
+		.attr('x',function(datum,index) { return 550-300+xRating(datum.average)-5; })
+		.attr('style', 'fill:#000000')
 		
 		chart.selectAll('.descText')
 		.data(opts.data.Descriptors)
@@ -91,7 +164,7 @@
 			return top_desc.join(',');
 		})
 		.attr('y',function(datum,index) { return 50*index+50+15; })
-		.attr('x',650)
+		.attr('x',660)
 		.attr('style', 'fill:#000000');
 
 		chart.selectAll('.descBorder')
@@ -103,7 +176,7 @@
 			return 'descBorder row'+index;
 		})
 		.attr('y',function(datum,index) { return 50*index+50-5; })
-		.attr('x',640)
+		.attr('x',650)
 		.attr('height',30)
 		.attr('width', 380)
 		.attr('style', 'fill:none; stroke: black;');

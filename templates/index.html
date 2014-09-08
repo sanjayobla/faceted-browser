@@ -2,17 +2,44 @@
 {% block content %}
 <script type=text/javascript>
   $(function() {
-	$("#loadBtn").click(function() {
+	$(window).load(function () {
 		$.ajax({
 			type: "GET",
-			url: $SCRIPT_ROOT + "/populateFilters/",
+			url: $SCRIPT_ROOT + "/listFilterCategories/",
+			contentType: "application/json; charset=utf-8",
+			success: function (json) {
+				html = '<form role="form">';
+				var data = jQuery.parseJSON(json);
+				for (datum in data) {
+					html += '<div class="checkbox col-md-2">'
+					html += '<label>';
+					html += '<input type="checkbox" class="filterCheck" id="'+data[datum]+'">'+data[datum];
+					html += '</label></div>';
+				}
+				html += '</form>';
+				$('#chooseFilters').html(html);
+			}
+		});
+	});
+
+	$("#loadBtn").click(function() {
+		list = [];
+		data = {};
+		$('.filterCheck:checked').each(function () {
+			list.push($(this).attr('id'));
+		});
+		data['filters'] = list.join(',')
+		$.ajax({
+			type: "GET",
+			data: data,
+			url: $SCRIPT_ROOT + "/populateFilters/", 
 			contentType: "application/json; charset=utf-8",
 			success: function(data) {
 				var obj = jQuery.parseJSON(data);
 				//console.log(obj);
 				var html = '<form role="form">';
 				for (key in obj.filters) {
-					html += '<div class="form-group col-md-1">';
+					html += '<div class="form-group col-md-2 filterDiv">';
 					html += '<label for="'+key+'">'+key+'</label>';
 					html += '<select class="form-control filter" id="'+key+'">';
 					html += '<option id="all"></option>';
@@ -21,14 +48,15 @@
 					}
 					html += '</select></div>'
 				}
-				html += '<div class="form-group col-md-1">';
-				html += '<label for="category">Category</label>';
+				html += '<div class="clearfix"></div>';
+				html += '<div class="form-group col-md-2">';
+				html += '<label for="category">Group by</label>';
 				html += '<select class="form-control category" id="category">';
 				for (value in obj.categories) {
 					html += '<option id="'+obj.categories[value]+'">'+obj.categories[value]+'</option>';
 				}
 				html += '</select></div>'
-				html += "<button type='button' id='filterBtn' name='filterBtn'>Filter</button>"
+				html += "<button type='button' class='btn btn-primary' id='filterBtn' name='filterBtn'>Filter</button>"
 				html += "</form>";
 				$('#dropdown').html(html);
 				$("#filterBtn").click(function() {
@@ -57,11 +85,15 @@
 						}
 					});
 				});
+				d3.select('#vis')
+				.append('svg')
+				.attr('class','drawArea')
+				.attr('width', 1300)
+				.attr('height', 2300)
+				$('.filterDiv').scrollView();
 			}
 		});
 	});
-	function loadGraph(data) {
-	}
 
     $("#submitBtn").click(function() {
          $.ajax({
@@ -76,7 +108,9 @@
     });
   });
 </script>
-<button type='button' id='loadBtn' name='loadBtn'>Load fields</button><br /><br />
+<br />
+<div id='chooseFilters'></div>
+<button type='button' id='loadBtn' name='loadBtn' class="btn btn-primary center-block"'>Load fields</button><br /><br />
 <div id='dropdown'></div>
 <div id='vis'></div>
 {% endblock %}

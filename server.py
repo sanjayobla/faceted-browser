@@ -20,6 +20,11 @@ def echo():
     ret_data = {"value": request.args.get('echoValue')}
     return jsonify(ret_data)
 
+@app.route('/listFilterCategories/', methods=['GET'])
+def listFilters():
+	record = wine.find_one({},{'_id': 0})
+	return json.dumps(record.keys())
+
 @app.route('/filter/', methods=['GET'])
 def filter():
 	filters = {}
@@ -35,7 +40,7 @@ def filter():
 			match['$match'][filter] = filters[filter]
 	pipeline.append(match)
 	pipeline.append({'$group': { '_id': '$'+str(category), 'average': { '$avg': '$Rating'}, 'count': { '$sum': 1 }}})
-	pipeline.append({'$sort': { 'count': -1 }})
+	pipeline.append({'$sort': { 'average': -1 }})
 	print pipeline
 
 	records = wine.aggregate(pipeline, cursor={})
@@ -72,14 +77,16 @@ def filter():
 
 @app.route('/populateFilters/', methods=['GET'])
 def populateFilters():
+	inputs = request.args['filters'].split(',')
 	ret_data = {}
 	return_obj = {}
-	record = wine.find_one()
-	for key in record.keys():
-		if key not in ['Descriptor','docText','WineN','CombinedLocation','LabelName','VinN','RatingShow','docID','_id','Rating','Producer','DrinkDate','DrinkDate_Hi','SourceDate','Issue','Pages']:
-			ret_data[key] = wine.distinct(key)
+	categories = wine.find_one().keys()
+	for key in inputs:
+	#for key in record.keys():
+		#if key not in ['Descriptor','docText','WineN','CombinedLocation','LabelName','VinN','RatingShow','docID','_id','Rating','Producer','DrinkDate','DrinkDate_Hi','SourceDate','Issue','Pages']:
+		ret_data[key] = wine.distinct(key)
 	return_obj['filters'] = json.loads(dumps(ret_data))
-	return_obj['categories'] = record.keys()
+	return_obj['categories'] = categories
 	return_json = json.dumps(return_obj)
 	return return_json
 
